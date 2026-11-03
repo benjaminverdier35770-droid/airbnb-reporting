@@ -27,13 +27,16 @@ print("Total listings :", len(listing_ids))
 def get_airbnb_data(listing_id):
     url = "https://api.apify.com/v2/acts/dtrungtin~airbnb-scraper/run-sync-get-dataset-items?token=" + APIFY_TOKEN
     payload = {
-        "startUrls": [{"url": "https://www.airbnb.fr/rooms/" + listing_id}],
+        "startUrls": [{"url": f"https://www.airbnb.fr/rooms/{listing_id}"}],
         "maxListings": 1,
-        "includeReviews": False,
-        "includeCalendar": True
+        "includeCalendar": True,
+        "proxyConfiguration": {
+            "useApifyProxy": True,
+            "apifyProxyGroups": ["RESIDENTIAL"]
+        }
     }
     try:
-        response = requests.post(url, json=payload, timeout=120)
+        response = requests.post(url, json=payload, timeout=180)
         if response.status_code == 200:
             data = response.json()
             if data and len(data) > 0:
@@ -55,18 +58,31 @@ for i, listing_id in enumerate(listing_ids):
         print("Pas de donnees pour", listing_id)
         continue
 
-    # Extraction du calendrier
-    calendar = data.get('calendar', [])
+    # Extraction du calendrier (structure variable selon l'acteur)
+    calendar = data.get('calendar', []) or data.get('calendarMonths', [])
     all_days = []
     for month in calendar:
-        for day in month.get('days', []):
-            all_days.append(day)
+        days = month.get('days', []) if isinstance(month, dict) else []
+        all_days.extend(days)
+
+    # Si pas de calendrier dans la réponse, essayer d'autres champs
+    if not all_days and 'availabilityCalendar' in data:
+        for month in data['availabilityCalendar']:
+            all_days.extend(month.get('days', []))
 
     def get_occupancy(days_list):
         if not days_list:
             return 0
-        booked = sum(1 for d in days_list if not d.get('available', True))
-        return round((booked / len(days_list)) * 100, 1)
+        booked = sum(1 for d in days_list if not d.get('available', True) or d.get('isBooked', False))
+        return round((booked / len(days_list)) * 100, 1) if days_list else 0
+
+    def get_price(day):
+        if not day:
+            return 0
+        price = day.get('price', 0) or day.get('localizedPrice', 0)
+        if isinstance(price, str):
+            price = float(re.sub(r'[^\d.]', '', price)) if price else 0
+        return price
 
     today_str = today.strftime('%Y-%m-%d')
     tomorrow = (today + timedelta(days=1)).strftime('%Y-%m-%d')
@@ -83,27 +99,27 @@ for i, listing_id in enumerate(listing_ids):
 
     row_idx = i + 2
 
-    # Tableau 1 : taux de remplissage
+    # Tableau 1 : taux de remplissage (colonnes B-F)
     ws_synthese.cell(row=row_idx, column=2, value=get_occupancy(days_today))
     ws_synthese.cell(row=row_idx, column=3, value=get_occupancy(days_tomorrow))
     ws_synthese.cell(row=row_idx, column=4, value=get_occupancy(days_day_after))
     ws_synthese.cell(row=row_idx, column=5, value=get_occupancy(days_7))
     ws_synthese.cell(row=row_idx, column=6, value=get_occupancy(days_30))
 
-    # Tableau 2 : tarifs 7 prochains jours (colonnes G à M = 7 à 13)
+    # Tableau 2 : tarifs 7 prochains jours (colonnes G-M)
     for j in range(7):
         target_date = (today + timedelta(days=j)).strftime('%Y-%m-%d')
         day_data = next((d for d in all_days if d.get('date') == target_date), None)
-        price = day_data.get('price', 0) if day_data else 0
-        ws_synthese.cell(row=row_idx, column=7+j, value=price)
+        ws_synthese.cell(row=row_idx, column=7+j, value=get_price(day_data))
 
-    # Tableau 3 : tarifs moyens par jour de semaine (J+8 à J+38)
+    # Tableau 3 : tarifs moyens par jour de semaine J+8 à J+38 (colonnes N-T)
     weekday_prices = defaultdict(list)
     for j in range(8, 39):
         target_date = today + timedelta(days=j)
         day_data = next((d for d in all_days if d.get('date') == target_date.strftime('%Y-%m-%d')), None)
-        if day_data and day_data.get('price'):
-            weekday_prices[target_date.weekday()].append(day_data['price'])
+        price = get_price(day_data)
+        if price > 0:
+            weekday_prices[target_date.weekday()].append(price)
 
     for wd in range(7):
         avg = round(sum(weekday_prices[wd]) / len(weekday_prices[wd]), 2) if weekday_prices[wd] else 0
