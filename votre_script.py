@@ -25,13 +25,11 @@ for row in range(2, 8):
 print("Total listings :", len(listing_ids))
 
 def get_airbnb_data(listing_id):
-    # Nouvel acteur plus fiable : clockworks~airbnb-scraper
-    url = "https://api.apify.com/v2/acts/clockworks~airbnb-scraper/run-sync-get-dataset-items?token=" + APIFY_TOKEN
+    # Acteur fiable : tri_angle~airbnb-scraper
+    url = "https://api.apify.com/v2/acts/tri_angle~airbnb-scraper/run-sync-get-dataset-items?token=" + APIFY_TOKEN
     payload = {
         "startUrls": [{"url": f"https://www.airbnb.fr/rooms/{listing_id}"}],
         "maxItems": 1,
-        "includeCalendar": True,
-        "includeReviews": False,
         "proxyConfiguration": {
             "useApifyProxy": True,
             "apifyProxyGroups": ["RESIDENTIAL"]
@@ -60,7 +58,7 @@ for i, listing_id in enumerate(listing_ids):
         print("Pas de donnees pour", listing_id)
         continue
 
-    # Extraction du calendrier (structure clockworks)
+    # Extraction calendrier (structure tri_angle)
     calendar = data.get('calendar', []) or data.get('availabilityCalendar', [])
     all_days = []
     for month in calendar:
@@ -76,7 +74,7 @@ for i, listing_id in enumerate(listing_ids):
     def get_occupancy(days_list):
         if not days_list:
             return 0
-        booked = sum(1 for d in days_list if d.get('available') == False or d.get('isBooked') == True)
+        booked = sum(1 for d in days_list if d.get('available') == False or d.get('isBooked') == True or d.get('booked') == True)
         return round((booked / len(days_list)) * 100, 1)
 
     def get_price(day):
@@ -84,7 +82,7 @@ for i, listing_id in enumerate(listing_ids):
             return 0
         price = day.get('price', 0)
         if isinstance(price, dict):
-            price = price.get('amount', 0) or price.get('total', 0)
+            price = price.get('amount', 0) or price.get('total', 0) or price.get('localized', 0)
         if isinstance(price, str):
             price = float(re.sub(r'[^\d.]', '', price)) if price else 0
         return float(price) if price else 0
