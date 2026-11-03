@@ -25,26 +25,21 @@ for row in range(2, 8):
 print("Total listings :", len(listing_ids))
 
 def get_airbnb_data(listing_id):
-    url = f"https://api.apify.com/v2/acts/dtrungtin~airbnb-scraper/run-sync-get-dataset-items?token={APIFY_TOKEN}"
-
-    # CORRECTION : startUrls comme tableau de strings, pas d'objets
+    url = "https://api.apify.com/v2/acts/dtrungtin~airbnb-scraper/run-sync-get-dataset-items?token=" + APIFY_TOKEN
     payload = {
-        "startUrls": [f"https://www.airbnb.fr/rooms/{listing_id}"],
-        "maxItems": 1,
-        "includeCalendar": True,
-        "includeReviews": False
+        "startUrls": [{"url": "https://www.airbnb.fr/rooms/" + listing_id}],
+        "maxListings": 1,
+        "includeReviews": False,
+        "includeCalendar": True
     }
-
     try:
         response = requests.post(url, json=payload, timeout=120)
         if response.status_code == 200:
             data = response.json()
-            if isinstance(data, list) and len(data) > 0:
+            if data and len(data) > 0:
                 return data[0]
-            elif isinstance(data, dict):
-                return data
-        print(f"Erreur API {response.status_code} pour {listing_id}")
-        print(f"Detail : {response.text[:500]}")  # Log pour voir l'erreur exacte
+        print("Erreur API", response.status_code, "pour", listing_id)
+        print("Detail :", response.text[:500])
         return None
     except Exception as e:
         print("Exception pour", listing_id, ":", e)
@@ -60,15 +55,12 @@ for i, listing_id in enumerate(listing_ids):
         print("Pas de donnees pour", listing_id)
         continue
 
-    # Extraction du calendrier (structure variable selon l'acteur)
-    calendar = data.get('calendar', []) or data.get('calendarMonths', []) or data.get('availabilityCalendar', [])
+    # Extraction du calendrier
+    calendar = data.get('calendar', [])
     all_days = []
-    if calendar and isinstance(calendar, list):
-        if isinstance(calendar[0], dict) and 'days' in calendar[0]:
-            for month in calendar:
-                all_days.extend(month.get('days', []))
-        else:
-            all_days = calendar
+    for month in calendar:
+        for day in month.get('days', []):
+            all_days.append(day)
 
     def get_occupancy(days_list):
         if not days_list:
@@ -91,18 +83,21 @@ for i, listing_id in enumerate(listing_ids):
 
     row_idx = i + 2
 
+    # Tableau 1 : taux de remplissage
     ws_synthese.cell(row=row_idx, column=2, value=get_occupancy(days_today))
     ws_synthese.cell(row=row_idx, column=3, value=get_occupancy(days_tomorrow))
     ws_synthese.cell(row=row_idx, column=4, value=get_occupancy(days_day_after))
     ws_synthese.cell(row=row_idx, column=5, value=get_occupancy(days_7))
     ws_synthese.cell(row=row_idx, column=6, value=get_occupancy(days_30))
 
+    # Tableau 2 : tarifs 7 prochains jours (colonnes G à M = 7 à 13)
     for j in range(7):
         target_date = (today + timedelta(days=j)).strftime('%Y-%m-%d')
         day_data = next((d for d in all_days if d.get('date') == target_date), None)
         price = day_data.get('price', 0) if day_data else 0
         ws_synthese.cell(row=row_idx, column=7+j, value=price)
 
+    # Tableau 3 : tarifs moyens par jour de semaine (J+8 à J+38)
     weekday_prices = defaultdict(list)
     for j in range(8, 39):
         target_date = today + timedelta(days=j)
