@@ -12,7 +12,8 @@ print("Chargement du fichier Excel...")
 wb = load_workbook(EXCEL_FILE)
 print("Onglets trouves :", wb.sheetnames)
 
-ws_param = wb['parametre']
+# CORRECTION ICI : 'paramètre' avec accent
+ws_param = wb['paramètre']
 listing_ids = []
 for row in range(2, 8):
     cell_value = ws_param.cell(row=row, column=4).value
@@ -44,7 +45,7 @@ def get_airbnb_data(listing_id):
         print("Exception pour", listing_id, ":", e)
         return None
 
-ws_synthese = wb['synthese']
+ws_synthese = wb['synthèse']
 today = datetime.now().date()
 
 for i, listing_id in enumerate(listing_ids):
