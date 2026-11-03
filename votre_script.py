@@ -12,7 +12,6 @@ print("Chargement du fichier Excel...")
 wb = load_workbook(EXCEL_FILE)
 print("Onglets trouves :", wb.sheetnames)
 
-# CORRECTION ICI : 'paramètre' avec accent
 ws_param = wb['paramètre']
 listing_ids = []
 for row in range(2, 8):
@@ -26,20 +25,26 @@ for row in range(2, 8):
 print("Total listings :", len(listing_ids))
 
 def get_airbnb_data(listing_id):
-    url = "https://api.apify.com/v2/acts/dtrungtin~airbnb-scraper/run-sync-get-dataset-items?token=" + APIFY_TOKEN
+    url = f"https://api.apify.com/v2/acts/dtrungtin~airbnb-scraper/run-sync-get-dataset-items?token={APIFY_TOKEN}"
+
+    # CORRECTION : startUrls comme tableau de strings, pas d'objets
     payload = {
-        "startUrls": [{"url": "https://www.airbnb.fr/rooms/" + listing_id}],
-        "maxListings": 1,
-        "includeReviews": False,
-        "includeCalendar": True
+        "startUrls": [f"https://www.airbnb.fr/rooms/{listing_id}"],
+        "maxItems": 1,
+        "includeCalendar": True,
+        "includeReviews": False
     }
+
     try:
-        response = requests.post(url, json=payload, timeout=60)
+        response = requests.post(url, json=payload, timeout=120)
         if response.status_code == 200:
             data = response.json()
-            if data and len(data) > 0:
+            if isinstance(data, list) and len(data) > 0:
                 return data[0]
-        print("Erreur API", response.status_code, "pour", listing_id)
+            elif isinstance(data, dict):
+                return data
+        print(f"Erreur API {response.status_code} pour {listing_id}")
+        print(f"Detail : {response.text[:500]}")  # Log pour voir l'erreur exacte
         return None
     except Exception as e:
         print("Exception pour", listing_id, ":", e)
@@ -55,13 +60,15 @@ for i, listing_id in enumerate(listing_ids):
         print("Pas de donnees pour", listing_id)
         continue
 
-    calendar = data.get('calendar', []) or data.get('calendarMonths', [])
+    # Extraction du calendrier (structure variable selon l'acteur)
+    calendar = data.get('calendar', []) or data.get('calendarMonths', []) or data.get('availabilityCalendar', [])
     all_days = []
-    if calendar and isinstance(calendar[0], dict) and 'days' in calendar[0]:
-        for month in calendar:
-            all_days.extend(month.get('days', []))
-    else:
-        all_days = calendar
+    if calendar and isinstance(calendar, list):
+        if isinstance(calendar[0], dict) and 'days' in calendar[0]:
+            for month in calendar:
+                all_days.extend(month.get('days', []))
+        else:
+            all_days = calendar
 
     def get_occupancy(days_list):
         if not days_list:
