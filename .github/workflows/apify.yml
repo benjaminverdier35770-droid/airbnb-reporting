@@ -1,18 +1,31 @@
 name: Airbnb Competitive Reporting
 
 on:
-  workflow_dispatch:  # Permet de lancer manuellement
   schedule:
-    - cron: '0 6 * * *'  # Tous les jours à 6h du matin (heure UTC)
+    # Tous les jours à 20h50 heure française (19h50 UTC en hiver)
+    - cron: '50 19 * * *'
+  workflow_dispatch:  # Permet aussi de le lancer manuellement
 
 jobs:
-  scrape:
+  run-report:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
 
-      - name: Run Apify Actor
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
         run: |
-          curl -X POST "https://api.apify.com/v2/acts/YOUR_ACTOR_ID/run?token=${{ secrets.APIFY_TOKEN }}" \
-          -H "Content-Type: application/json" \
-          -d '{"input": {"urls": ["URL_AIRBNB_1", "URL_AIRBNB_2"]}}'
+          python -m pip install --upgrade pip
+          pip install requests openpyxl
+
+      - name: Run Airbnb reporting script
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+        run: |
+          python votre_script.py
